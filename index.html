@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="uz">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>CRAZY CITY</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#87c8f5;font-family:system-ui,Arial;touch-action:none}
+canvas{display:block;width:100%;height:100%}
+#hud{position:fixed;top:12px;left:12px;right:12px;display:flex;justify-content:space-between;pointer-events:none;color:white;font-weight:900;text-shadow:0 2px 5px #142b50}
+.pill{background:#142e69d9;border:1px solid #ffffff80;border-radius:14px;padding:9px 13px;font-size:17px}
+#menu{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(90vw,410px);padding:23px;border:2px solid #ffffff50;border-radius:24px;background:linear-gradient(145deg,#142b5bed,#263f79ed);color:white;text-align:center;box-shadow:0 15px 50px #10264d66}
+#menu h1{margin:0;color:#ffd33d;font-size:38px;letter-spacing:1px;text-shadow:0 3px #a14b00}
+#menu p{line-height:1.45;margin:9px 0 17px}
+button{border:0;border-radius:14px;background:linear-gradient(#ffe16a,#ffb51c);padding:13px 20px;font-size:17px;font-weight:900;color:#4c2a00}
+#heroPick{display:flex;justify-content:center;align-items:center;gap:12px;margin:12px 0}
+#heroPick button{padding:8px 13px;font-size:20px}
+#heroLabel{font-weight:800;color:#ffe16a;min-width:115px}
+#hint{position:fixed;bottom:12px;left:0;right:0;text-align:center;color:white;font-size:13px;font-weight:800;text-shadow:0 2px 5px #142b50;pointer-events:none}
+#mute{position:fixed;right:12px;top:62px;background:#142e69d9;color:white;border:1px solid #ffffff70;padding:7px 11px;font-size:13px}
+</style></head>
+<body>
+<div id="hud"><div class="pill">🏃 <span id="meters">0</span> m</div><div class="pill">🪙 <span id="coins">0</span></div></div>
+<button id="mute">🔊 Ovoz</button>
+<div id="menu"><h1>CRAZY CITY</h1><p>Olti qahramondan birini tanlang va telba itdan qoching!</p>
+<div id="heroPick"><button id="prev">‹</button><span id="heroLabel">Lorenzo 🇮🇹</span><button id="next">›</button></div>
+<p id="message">Chap/o‘ng — yo‘lak. Yuqoriga — sakrash. Pastga — sirpanish.</p><button id="play">O‘YINNI BOSHLASH</button></div>
+<div id="hint">← → YO‘LAK &nbsp; • &nbsp; ↑ SAKRASH &nbsp; • &nbsp; ↓ SIRPANISH</div>
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+const names=['Lorenzo 🇮🇹','Diego 🇪🇸','João 🇧🇷','Mateo 🇦🇷','Mike 🇺🇸','Bobby 🇺🇸'];
+const outfits=[0xb32632,0x76502d,0x15934b,0x2874bd,0x202a43,0xe4b52b];
+let selected=0,active=false,dist=0,coins=0,lane=0,speed=17,spawnClock=0,jump=0,slide=0,last=performance.now(),sound=true;
+const $=id=>document.getElementById(id);
+const scene=new THREE.Scene();scene.background=new THREE.Color(0x8bc9f5);scene.fog=new THREE.Fog(0x8bc9f5,38,115);
+const camera=new THREE.PerspectiveCamera(62,innerWidth/innerHeight,.1,180);camera.position.set(0,6.5,11);camera.lookAt(0,1,-8);
+const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;document.body.prepend(renderer.domElement);
+scene.add(new THREE.HemisphereLight(0xffffff,0x59657b,2));
+const sun=new THREE.DirectionalLight(0xffffff,2.2);sun.position.set(-8,15,10);sun.castShadow=true;sun.shadow.mapSize.set(1024,1024);scene.add(sun);
+const mat=(c,r=.82)=>new THREE.MeshStandardMaterial({color:c,roughness:r});
+const road=new THREE.Mesh(new THREE.BoxGeometry(10,.25,150),mat(0x353b48));road.position.set(0,-.18,-48);road.receiveShadow=true;scene.add(road);
+const grass=new THREE.Mesh(new THREE.BoxGeometry(90,.18,150),mat(0x4d9b58));grass.position.set(0,-.42,-48);scene.add(grass);
+for(let z=8;z>-120;z-=8)for(let x of [-1.67,1.67]){let line=new THREE.Mesh(new THREE.BoxGeometry(.11,.025,3.4),mat(0xffffff));line.position.set(x,-.035,z);scene.add(line)}
+function building(x,z,h,w,color){let g=new THREE.Group();let b=new THREE.Mesh(new THREE.BoxGeometry(w,h,w*.8),mat(color));b.position.y=h/2-.2;b.castShadow=true;g.add(b);for(let y=1;y<h-1;y+=1.6)for(let side of [-1,1]){let win=new THREE.Mesh(new THREE.BoxGeometry(.08,.55,.05),mat(0xffdf83));win.position.set(side*w*.26,y,w*.405);g.add(win)}g.position.set(x,0,z);scene.add(g)}
+for(let z=4;z>-115;z-=13){building(-7.5,z,8+Math.random()*11,3,0xd97950);building(7.5,z-5,9+Math.random()*13,3.2,0x547cb5)}
+const hero=new THREE.Group();scene.add(hero);
+function add(g,geo,color,x,y,z){let m=new THREE.Mesh(geo,mat(color));m.position.set(x,y,z);m.castShadow=true;g.add(m);return m}
+function makeHero(){hero.clear();let c=outfits[selected];add(hero,new THREE.CapsuleGeometry(.43,.8,5,10),c,0,1.25,0);add(hero,new THREE.SphereGeometry(.42,16,12),0xf0b78e,0,2.12,.05);
+for(let x of [-.16,.16]){add(hero,new THREE.SphereGeometry(.1,10,8),0xffffff,x,2.18,.39);add(hero,new THREE.SphereGeometry(.045,8,6),0x171717,x,2.18,.47)}
+add(hero,new THREE.SphereGeometry(.11,10,8),0x9b5542,0,2.02,.43);
+for(let x of [-.23,.23])add(hero,new THREE.CapsuleGeometry(.13,.65,4,8),0x252b36,x,.43,0);
+if(selected===0)add(hero,new THREE.ConeGeometry(.4,.65,5),0xb32632,0,2.55,-.05);
+if(selected===1){add(hero,new THREE.TorusGeometry(.34,.08,8,16),0x252525,0,2.18,.03)}
+if(selected===2)add(hero,new THREE.BoxGeometry(.86,.3,.08),0xffd52f,0,1.45,.35);
+if(selected===4){add(hero,new THREE.CylinderGeometry(.42,.42,.22,12),0x1c2949,0,2.48,0)}
+}
+makeHero();hero.position.set(0,0,2);
+const dog=new THREE.Group();scene.add(dog);const fur=0x98613d,cream=0xf0e5d7,pink=0xe94e98,black=0x171923;
+add(dog,new THREE.SphereGeometry(.72,18,14),fur,0,1.05,0);add(dog,new THREE.SphereGeometry(.5,18,14),cream,0,1.02,.42);add(dog,new THREE.SphereGeometry(.56,18,14),fur,0,1.93,.38);add(dog,new THREE.SphereGeometry(.16,12,10),black,0,1.82,.86);add(dog,new THREE.SphereGeometry(.29,12,10),pink,0,1.34,.8);
+for(let x of [-.31,.31]){add(dog,new THREE.SphereGeometry(.18,12,10),0xffffff,x,2.12,.77);add(dog,new THREE.SphereGeometry(.075,8,8),black,x,2.12,.91);let ear=add(dog,new THREE.ConeGeometry(.22,.62,8),fur,x*1.6,2.52,.25);ear.rotation.z=x>0?-.5:.5}
+add(dog,new THREE.TorusGeometry(.66,.09,8,24),black,0,1.02,0).rotation.x=Math.PI/2;
+for(let i=0;i<8;i++){let a=i*Math.PI/4,s=add(dog,new THREE.ConeGeometry(.12,.35,6),0xbcc2ca,Math.cos(a)*.68,1.16,Math.sin(a)*.68);s.rotation.z=-Math.cos(a)*.7}
+dog.position.set(0,0,7);
+const obstacles=[],tokens=[];
+function spawnObstacle(z){let l=Math.floor(Math.random()*3)-1,g=new THREE.Group();add(g,new THREE.BoxGeometry(1.15,1.05,.85),Math.random()<.5?0xf0a32c:0xd94c43,0,.53,0);g.position.set(l*2,0,z);scene.add(g);obstacles.push(g)}
+function spawnCoin(z){let l=Math.floor(Math.random()*3)-1,m=new THREE.Mesh(new THREE.TorusGeometry(.32,.1,8,18),mat(0xffd52e,.35));m.position.set(l*2,1.25,z);scene.add(m);tokens.push(m)}
+function reset(){dist=0;coins=0;speed=17;lane=0;spawnClock=0;jump=0;slide=0;hero.position.set(0,0,2);dog.position.set(0,0,7);for(let a of [obstacles,tokens]){for(let o of a)scene.remove(o);a.length=0}$('meters').textContent='0';$('coins').textContent='0'}
+function finish(){active=false;$('menu').style.display='block';$('message').textContent=`It sizni quvib yetdi! Masofa: ${Math.floor(dist)} m • Tanga: ${coins}`;$('play').textContent='QAYTA O‘YNASH'}
+function start(){reset();active=true;$('menu').style.display='none';$('play').textContent='O‘YINNI BOSHLASH'}
+$('play').onclick=start;$('prev').onclick=()=>{selected=(selected+5)%6;makeHero();$('heroLabel').textContent=names[selected]};$('next').onclick=()=>{selected=(selected+1)%6;makeHero();$('heroLabel').textContent=names[selected]};
+function move(d){if(active)lane=Math.max(-1,Math.min(1,lane+d))}
+function action(dir){if(!active)return;if(dir==='up'&&jump<=0&&slide<=0)jump=.72;if(dir==='down'&&slide<=0)slide=.62}
+let sx=0,sy=0;addEventListener('touchstart',e=>{sx=e.touches[0].clientX;sy=e.touches[0].clientY},{passive:true});addEventListener('touchend',e=>{let dx=e.changedTouches[0].clientX-sx,dy=e.changedTouches[0].clientY-sy;if(Math.abs(dx)>Math.abs(dy))move(dx>0?1:-1);else action(dy<0?'up':'down')},{passive:true});
+addEventListener('keydown',e=>{if(e.key==='ArrowLeft'||e.key==='a')move(-1);if(e.key==='ArrowRight'||e.key==='d')move(1);if(e.key==='ArrowUp'||e.key===' ')action('up');if(e.key==='ArrowDown')action('down')});
+$('mute').onclick=()=>{$('mute').textContent=sound?'🔇 Ovoz':'🔊 Ovoz';sound=!sound};
+function animate(now){requestAnimationFrame(animate);let dt=Math.min((now-last)/1000,.04);last=now;
+if(active){dist+=speed*dt/3;speed=Math.min(29,17+dist/95);spawnClock+=dt;if(spawnClock>1.12){spawnObstacle(-78);if(Math.random()>.2)spawnCoin(-84);spawnClock=0}
+hero.position.x+=(lane*2-hero.position.x)*Math.min(1,dt*10);hero.rotation.z=(lane*2-hero.position.x)*-.06;
+if(jump>0){jump-=dt;hero.position.y=Math.sin((.72-jump)/.72*Math.PI)*1.5}else hero.position.y=0;
+if(slide>0){slide-=dt;hero.scale.y=.58}else hero.scale.y=1;
+dog.position.z=Math.min(6.65,dog.position.z+dt*.11);dog.position.x+=(hero.position.x-dog.position.x)*dt*1.25;dog.position.y=Math.abs(Math.sin(now*.008))*.13;
+for(let a of [obstacles,tokens])for(let i=a.length-1;i>=0;i--){let o=a[i];o.position.z+=speed*dt;if(Math.abs(o.position.z-2)<.95&&Math.abs(o.position.x-hero.position.x)<.85){if(a===tokens){coins++;$('coins').textContent=coins;scene.remove(o);a.splice(i,1)}else if(hero.position.y<.65&&slide<=0)finish()}if(o.position.z>12){scene.remove(o);a.splice(i,1)}}
+$('meters').textContent=Math.floor(dist);camera.position.x+=(hero.position.x*.2-camera.position.x)*dt*2;camera.lookAt(hero.position.x*.18,1,-8)}
+renderer.render(scene,camera)}
+requestAnimationFrame(animate);addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(Math.min(devicePixelRatio,1.5))});
+</script></body></html>
